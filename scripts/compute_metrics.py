@@ -65,6 +65,7 @@ absl.flags.DEFINE_string(
     "root_results", "data/results/", "root directory for results"
 )
 absl.flags.DEFINE_integer("seed", 0, "seed to use to set reproducibility")
+absl.flags.DEFINE_list("target_layers", [], "Comma-separated list of layers to analyze. If empty, all layers will be analyzed.")
 
 FLAGS = absl.flags.FLAGS
 
@@ -164,8 +165,14 @@ def main(argv):
         cfg.device
     )
 
+    # If target_layers is specified, use that; otherwise use all layers from config
+    target_layers = FLAGS.target_layers if FLAGS.target_layers else cfg.get_feature_names()
+
     # Loop over all the selected layers
-    for _, layer_name in enumerate(cfg.get_feature_names()):
+    for _, layer_name in enumerate(target_layers):
+        if layer_name not in cfg.get_feature_names():
+            print(f"Warning: {layer_name} is not a valid feature name. Skipping.")
+            continue
         # Get the number of units in the layer
         num_units = model_utils.get_number_of_units(model, layer_name, cfg)
 
