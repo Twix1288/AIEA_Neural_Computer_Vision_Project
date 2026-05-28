@@ -37,13 +37,14 @@ def build_ranges_from_clusters(
 
 
 def compute_activation_ranges(
-        activations: torch.Tensor, num_clusters: int) -> List[Tuple]:
+        activations: torch.Tensor, num_clusters: int, algorithm: str = 'kmeans', algorithm_kwargs: dict = None) -> List[Tuple]:
     """Compute activation ranges for each unit.
 
     Args:
         activations (torch.Tensor): Activations of the unit.
         num_clusters (int): Number of clusters.
         algorithm (str): Algorithm to use for clustering.
+        algorithm_kwargs (dict): Keyword arguments for the clustering algorithm.
 
     Returns:
         activation_ranges (List[tuple]): Activation ranges for each unit.
@@ -62,9 +63,37 @@ def compute_activation_ranges(
             activations = activations[activations > 0]
             activations = activations.reshape(-1, 1)
         # Compute activation ranges
-        clusters = scikit_cluster.KMeans(
-            n_clusters=num_clusters, random_state=0
+        if algorithm_kwargs is None:
+            algorithm_kwargs = {}
+
+        if algorithm == 'kmeans':
+            clusters = scikit_cluster.KMeans(
+                n_clusters=num_clusters, random_state=0, **algorithm_kwargs
             ).fit(activations)
+        elif algorithm == 'minibatch_kmeans':
+            clusters = scikit_cluster.MiniBatchKMeans(
+                n_clusters=num_clusters, random_state=0, **algorithm_kwargs
+            ).fit(activations)
+        elif algorithm == 'agglomerative':
+            clusters = scikit_cluster.AgglomerativeClustering(
+                n_clusters=num_clusters, **algorithm_kwargs
+            ).fit(activations)
+        elif algorithm == 'bisecting_kmeans':
+            clusters = scikit_cluster.BisectingKMeans(
+                n_clusters=num_clusters, random_state=0, **algorithm_kwargs
+            ).fit(activations)
+        elif algorithm == 'gmm':
+            from sklearn.mixture import GaussianMixture
+            gmm = GaussianMixture(n_components=num_clusters, random_state=0, **algorithm_kwargs).fit(activations)
+            clusters_labels = gmm.predict(activations)
+            # Dummy object to hold labels_
+            class GMMClusters:
+                pass
+            clusters = GMMClusters()
+            clusters.labels_ = clusters_labels
+        else:
+            raise ValueError(f"Unsupported clustering algorithm: {algorithm}")
+
         activation_ranges = build_ranges_from_clusters(
             activations, clusters.labels_, num_clusters)
     return activation_ranges

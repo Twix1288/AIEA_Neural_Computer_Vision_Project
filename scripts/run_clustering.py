@@ -2,6 +2,7 @@ import os
 import pickle
 import random
 import sys
+import json
 
 import torch
 import torchvision
@@ -30,8 +31,10 @@ absl.flags.DEFINE_integer("num_clusters", 5, "number of clusters")
 absl.flags.DEFINE_integer("beam_limit", 5, "beam limit")
 absl.flags.DEFINE_integer("random_units", 0, "number of units")
 
-# NEW TASK 7 FLAG: Allow user to specify custom layers
 absl.flags.DEFINE_list("target_layers", ["layer4"], "Comma-separated list of layers to analyze")
+
+absl.flags.DEFINE_string("clustering_algo", "kmeans", "Clustering algorithm to use")
+absl.flags.DEFINE_string("clustering_params", "{}", "Clustering parameters as a JSON string")
 
 absl.flags.DEFINE_string("root_models", "data/model/", "root directory for models")
 absl.flags.DEFINE_string("root_datasets", "data/dataset/", "root directory for datasets")
@@ -49,12 +52,24 @@ def main(argv):
     generator = utils.set_seed(FLAGS.seed)
     target_unit = int(os.environ.get("TARGET_UNIT", "-1"))
 
+    # Parse clustering parameters
+    clustering_kwargs = json.loads(FLAGS.clustering_params)
+    
+    # Update results directory to avoid cache collisions
+    results_suffix = FLAGS.clustering_algo
+    if clustering_kwargs:
+        # Create a deterministic string representation of parameters
+        params_str = "_".join([f"{k}-{v}" for k, v in sorted(clustering_kwargs.items())])
+        results_suffix += f"_{params_str}"
+    
+    custom_root_results = os.path.join(FLAGS.root_results, results_suffix)
+
     cfg = settings.Settings(
         subset=FLAGS.subset, model=FLAGS.model, pretrained=FLAGS.pretrained,
         num_clusters=FLAGS.num_clusters, beam_limit=FLAGS.beam_limit,
         device=FLAGS.device, root_models=FLAGS.root_models,
         root_datasets=FLAGS.root_datasets, root_segmentations=FLAGS.root_segmentations,
-        root_activations=FLAGS.root_activations, root_results=FLAGS.root_results
+        root_activations=FLAGS.root_activations, root_results=custom_root_results
     )
     sparse_segmentation_directory = cfg.get_segmentation_directory()
     mask_shape = cfg.get_mask_shape()
@@ -92,7 +107,11 @@ def main(argv):
 
         for unit in tqdm(selected_units, desc=f"Explaining units in {layer_name}"):
             unit_activations = activations[unit]
-            activation_ranges = activation_utils.compute_activation_ranges(unit_activations, FLAGS.num_clusters)
+            activation_ranges = activation_utils.compute_activation_ranges(
+                unit_activations, FLAGS.num_clusters, 
+                algorithm=FLAGS.clustering_algo, 
+                algorithm_kwargs=clustering_kwargs
+            )
 
             for cluster_index, activation_range in enumerate(sorted(activation_ranges)):
                 # ONLY process/print the highest cluster (Cluster 4) to save time
